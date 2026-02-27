@@ -2,14 +2,64 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, Text, View, FlatList, TextInput, TouchableOpacity, 
-  Image, KeyboardAvoidingView, Platform, SafeAreaView, ActivityIndicator, Alert
+  Image, KeyboardAvoidingView, Platform, SafeAreaView, ActivityIndicator, Alert,
+  Modal, Linking, Dimensions, AppState
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api, { BASE_URL } from '../constants/api';
 
-/* --- Clan Colors (Mapped from Web) --- */
+const { width } = Dimensions.get('window');
+
+// Tell Expo how to handle notifications when the app is OPEN
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+// --- NOTIFICATION REGISTRATION ---
+async function registerForPushNotificationsAsync() {
+  let token;
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern:[0, 250, 250, 250],
+      lightColor: '#b40f1f',
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      return null; // User denied permission
+    }
+    
+    // Get the Expo Push Token
+    try {
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
+      token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    } catch (e) {
+      token = (await Notifications.getExpoPushTokenAsync()).data;
+    }
+  }
+  return token;
+}
+
+/* --- Clan Colors --- */
 const CLAN_COLORS = {
   Brujah: '#b40f1f', Gangrel: '#2f7a3a', Malkavian: '#713c8b', Nosferatu: '#6a4b2b',
   Toreador: '#b8236b', Tremere: '#7b1113', Ventrue: '#1b4c8c', 'Banu Haqim': '#7a2f57',
@@ -17,10 +67,7 @@ const CLAN_COLORS = {
   Caitiff: '#636363', 'Thin-blood': '#6e6e2b',
 };
 
-/* --- Static Image Mapping --- 
-   React Native requires static string paths for local images.
-   Ensure these files exist in your assets/images folder! 
-*/
+/* --- Static Image Mapping --- */
 const CLAN_IMAGES = {
   'Brujah': require('../assets/images/clans/330px-Brujah_symbol.png'),
   'Gangrel': require('../assets/images/clans/330px-Gangrel_symbol.png'),
@@ -35,29 +82,30 @@ const CLAN_IMAGES = {
   'The Ministry': require('../assets/images/clans/330px-Ministry_symbol.png'),
   'Caitiff': require('../assets/images/clans/330px-Caitiff_symbol.png'),
   'Thin-blood': require('../assets/images/clans/330px-Thinblood_symbol.png'),
-  'Admin': require('../assets/images/dice/MessyCrit.png')
+  'Admin': null // Replace with require('../assets/images/dice/MessyCrit.png') if you have it
 };
 
-// Helper to determine if a contact is an Admin
 const isContactAdmin = (u) => u?.role === 'admin' || u?.permission_level === 'admin' || !!u?.is_admin;
 
 export default function ChatScreen() {
   const router = useRouter();
 
-  const[currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState([]);
-  const[npcs, setNpcs] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [npcs, setNpcs] = useState([]);
+  const[groups, setGroups] = useState([]);
   
-  const[selectedContact, setSelectedContact] = useState(null);
+  const [selectedContact, setSelectedContact] = useState(null);
   const [messages, setMessages] = useState([]);
-  const[text, setText] = useState('');
+  const [text, setText] = useState('');
   const [imageUri, setImageUri] = useState(null);
   
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState('');
   const pollRef = useRef(null);
   const flatListRef = useRef(null);
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // 1. Authentication & Initial Load
   useEffect(() => {
@@ -68,11 +116,21 @@ export default function ChatScreen() {
           router.replace('/login'); 
           return;
         }
-        
         setToken(storedToken);
         
         const meRes = await api.get('/auth/me');
         setCurrentUser(meRes.data.user);
+
+        // --- Register for Push Notifications ---
+        const pushToken = await registerForPushNotificationsAsync();
+        if (pushToken) {
+          await api.post('/push/subscribe', {
+            subscription: {
+              endpoint: pushToken, 
+              expoPushToken: pushToken 
+            }
+          }).catch(err => console.log("Push sub error:", err));
+        }
 
         await loadContacts();
       } catch (e) {
@@ -85,13 +143,13 @@ export default function ChatScreen() {
 
   const loadContacts = async () => {
     try {
-      const[{ data: u }, { data: n }, { data: g }] = await Promise.all([
+      const [{ data: u }, { data: n }, { data: g }] = await Promise.all([
         api.get('/chat/users'),
         api.get('/chat/npcs'),
         api.get('/chat/groups')
       ]);
       setUsers(u.users ||[]);
-      setNpcs(n.npcs ||[]);
+      setNpcs(n.npcs || []);
       setGroups(g.groups ||[]);
     } catch (e) {
       console.error("Failed to load contacts", e);
@@ -101,8 +159,27 @@ export default function ChatScreen() {
   };
 
   const handleLogout = async () => {
+    setIsMenuOpen(false);
     await AsyncStorage.removeItem('token');
     router.replace('/login');
+  };
+
+  const handleClearCache = async () => {
+    Alert.alert(
+      "Clear Cache",
+      "This will log you out and clear local data. Continue?",[
+        { text: "Cancel", style: "cancel" },
+        { text: "Clear", style: "destructive", onPress: async () => {
+            setIsMenuOpen(false);
+            await AsyncStorage.clear();
+            router.replace('/login');
+        }}
+      ]
+    );
+  };
+
+  const openLink = (url) => {
+    Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
   };
 
   // 2. Polling Messages
@@ -154,7 +231,6 @@ export default function ChatScreen() {
   // 4. Send Message
   const sendMessage = async () => {
     if (!text.trim() && !imageUri) return;
-
     let attachmentId = null;
 
     try {
@@ -165,7 +241,6 @@ export default function ChatScreen() {
         const type = match ? `image/${match[1]}` : `image`;
 
         formData.append('file', { uri: imageUri, name: filename, type });
-
         const uploadRes = await api.post('/chat/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -184,6 +259,7 @@ export default function ChatScreen() {
 
       setText('');
       setImageUri(null);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e) {
       Alert.alert("Error", "Failed to send message");
       console.error(e);
@@ -191,30 +267,21 @@ export default function ChatScreen() {
   };
 
   // --- RENDERERS ---
-
   const renderContact = ({ item, type }) => {
-    // Determine the avatar image
     const showAdminIcon = isContactAdmin(item);
-    let avatarSource = null;
-
-    if (showAdminIcon) {
-      avatarSource = CLAN_IMAGES['Admin'];
-    } else if (item.clan && CLAN_IMAGES[item.clan]) {
-      avatarSource = CLAN_IMAGES[item.clan];
-    }
-
-    // Determine the border tint
+    let avatarSource = showAdminIcon ? CLAN_IMAGES['Admin'] : (item.clan ? CLAN_IMAGES[item.clan] : null);
     const tint = CLAN_COLORS[item.clan] || '#1f1f24';
 
     return (
       <TouchableOpacity 
-        style={[styles.contactCard, { borderLeftColor: tint, borderLeftWidth: 3 }]} 
+        style={styles.contactCard} 
+        activeOpacity={0.7}
         onPress={() => {
           setMessages([]); 
           setSelectedContact({ ...item, type });
         }}
       >
-        <View style={styles.avatar}>
+        <View style={[styles.avatar, { borderColor: tint, borderWidth: 2 }]}>
           {avatarSource ? (
              <Image source={avatarSource} style={styles.avatarImg} />
           ) : (
@@ -223,16 +290,14 @@ export default function ChatScreen() {
             </Text>
           )}
         </View>
-        
         <View style={styles.contactInfo}>
-          <Text style={styles.contactName}>
+          <Text style={styles.contactName} numberOfLines={1}>
             {item.char_name || item.name || item.display_name}
           </Text>
-          <Text style={styles.contactSub}>
+          <Text style={styles.contactSub} numberOfLines={1}>
             {item.display_name || 'NPC'} {showAdminIcon ? '• Admin' : ''}
           </Text>
         </View>
-        
         {item.unread_count > 0 && (
           <View style={styles.badge}><Text style={styles.badgeText}>{item.unread_count}</Text></View>
         )}
@@ -250,242 +315,366 @@ export default function ChatScreen() {
           {item.sender_name && !isMine && selectedContact.type === 'group' && (
             <Text style={styles.senderName}>{item.sender_name}</Text>
           )}
-          
           {imageUrl && (
-            <Image 
-              source={{ uri: imageUrl }} 
-              style={styles.chatImage} 
-              resizeMode="cover" 
-            />
+            <Image source={{ uri: imageUrl }} style={styles.chatImage} resizeMode="cover" />
           )}
-
           {item.body ? <Text style={styles.messageText}>{item.body}</Text> : null}
-          
-          <Text style={styles.timestamp}>
-            {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </Text>
+          <View style={styles.messageMeta}>
+            <Text style={styles.timestamp}>
+              {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+            {isMine && <Ionicons name="checkmark-done" size={14} color="#888" style={{marginLeft: 4}} />}
+          </View>
         </View>
       </View>
     );
   };
 
-  // --- VIEWS ---
-
   if (loading || !currentUser) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.rootBackground, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#b40f1f" />
       </View>
     );
   }
 
-  if (!selectedContact) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Comms</Text>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
-        </View>
-        <FlatList
-          data={[
-            ...groups.map(g => ({ ...g, type: 'group' })),
-            ...users.map(u => ({ ...u, type: 'user' })),
-            ...npcs.map(n => ({ ...n, type: 'npc' }))
-          ]}
-          keyExtractor={item => `${item.type}-${item.id}`}
-          renderItem={({ item }) => renderContact({ item, type: item.type })}
-        />
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
-        style={styles.chatContainer} 
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View style={styles.chatHeader}>
-          <TouchableOpacity onPress={() => setSelectedContact(null)} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>{"< Back"}</Text>
-          </TouchableOpacity>
-          <View style={styles.chatHeaderInfo}>
-            <Text style={styles.chatTitle} numberOfLines={1}>
-              {selectedContact.char_name || selectedContact.name || selectedContact.display_name}
-            </Text>
-            {selectedContact.clan && (
-              <Text style={styles.chatSubtitle}>{selectedContact.clan}</Text>
-            )}
-          </View>
-        </View>
-
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={item => item.id.toString()}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.messagesList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        />
-
-        <View style={styles.inputContainer}>
-          {imageUri && (
-            <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-              <TouchableOpacity onPress={() => setImageUri(null)} style={styles.removeImage}>
-                <Text style={styles.removeImageText}>X</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+    <View style={styles.rootBackground}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={styles.container}>
           
-          <View style={styles.inputRow}>
-            <TouchableOpacity onPress={pickImage} style={styles.iconBtn}>
-              <Text style={styles.iconText}>📷</Text>
-            </TouchableOpacity>
-            
-            <TextInput
-              style={styles.textInput}
-              value={text}
-              onChangeText={setText}
-              placeholder="Message..."
-              placeholderTextColor="#888"
-              multiline
-            />
-            
-            <TouchableOpacity 
-              onPress={sendMessage} 
-              style={[styles.sendBtn, (!text && !imageUri) && styles.sendBtnDisabled]}
-              disabled={!text && !imageUri}
+          {/* HAMBURGER MENU MODAL */}
+          <Modal visible={isMenuOpen} transparent={true} animationType="fade">
+            <View style={styles.menuOverlay}>
+              <TouchableOpacity style={styles.menuBackdrop} onPress={() => setIsMenuOpen(false)} />
+              <View style={styles.menuContent}>
+                <View style={styles.menuHeader}>
+                  <View style={styles.menuAvatar}>
+                    <Text style={styles.menuAvatarText}>{currentUser.display_name[0].toUpperCase()}</Text>
+                  </View>
+                  <Text style={styles.menuUserName}>{currentUser.display_name}</Text>
+                  <Text style={styles.menuUserEmail}>{currentUser.email}</Text>
+                </View>
+                <View style={styles.menuItems}>
+                  <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
+                    <Ionicons name="log-out-outline" size={24} color="#e8e8ea" />
+                    <Text style={styles.menuItemText}>Logout</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.menuItem} onPress={handleClearCache}>
+                    <Ionicons name="trash-bin-outline" size={24} color="#ff6b6b" />
+                    <Text style={[styles.menuItemText, { color: '#ff6b6b' }]}>Clear Cache</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{flex: 1}} />
+                <View style={styles.menuFooter}>
+                  <Text style={styles.footerBrand}>Erebus Portal</Text>
+                  <Text style={styles.footerByline}>
+                    Athens Through-Time LARP{'\n'}Powered by Cerebral Productions
+                  </Text>
+                  <TouchableOpacity onPress={() => openLink('https://www.paradoxinteractive.com/games/world-of-darkness/community/dark-pack-agreement')}>
+                    <Text style={styles.footerLink}>Dark Pack Agreement</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.footerLegal}>
+                    Portions of the materials are the copyrights and trademarks of Paradox Interactive AB, and are used with permission. Unofficial fan content.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
+          {/* MAIN VIEW CONTENT */}
+          {!selectedContact ? (
+            <View style={styles.mainView}>
+              <View style={styles.homeHeader}>
+                <TouchableOpacity onPress={() => setIsMenuOpen(true)} style={styles.menuBtn}>
+                  <Ionicons name="menu" size={28} color="#e8e8ea" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Comms</Text>
+                <View style={{width: 28}} /> 
+              </View>
+              <FlatList
+                data={[
+                  ...groups.map(g => ({ ...g, type: 'group' })),
+                  ...users.map(u => ({ ...u, type: 'user' })),
+                  ...npcs.map(n => ({ ...n, type: 'npc' }))
+                ]}
+                keyExtractor={item => `${item.type}-${item.id}`}
+                renderItem={({ item }) => renderContact({ item, type: item.type })}
+                contentContainerStyle={{ paddingBottom: 20 }}
+              />
+            </View>
+          ) : (
+            <KeyboardAvoidingView 
+              style={styles.chatContainer} 
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
             >
-              <Text style={styles.sendBtnText}>Send</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.chatHeader}>
+                <TouchableOpacity onPress={() => setSelectedContact(null)} style={styles.backBtn}>
+                  <Ionicons name="chevron-back" size={26} color="#b40f1f" />
+                  <Text style={styles.backBtnText}>Contacts</Text>
+                </TouchableOpacity>
+                <View style={styles.chatHeaderInfo}>
+                  <Text style={styles.chatTitle} numberOfLines={1}>
+                    {selectedContact.char_name || selectedContact.name || selectedContact.display_name}
+                  </Text>
+                  {selectedContact.clan && (
+                    <Text style={styles.chatSubtitle}>{selectedContact.clan}</Text>
+                  )}
+                </View>
+              </View>
+
+              <FlatList
+                ref={flatListRef}
+                data={messages}
+                keyExtractor={item => item.id.toString()}
+                renderItem={renderMessage}
+                contentContainerStyle={styles.messagesList}
+                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+                onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+              />
+
+              <View style={styles.inputContainer}>
+                {imageUri && (
+                  <View style={styles.imagePreviewContainer}>
+                    <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+                    <TouchableOpacity onPress={() => setImageUri(null)} style={styles.removeImage}>
+                      <Ionicons name="close" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                
+                <View style={styles.inputRow}>
+                  <TouchableOpacity onPress={pickImage} style={styles.attachBtn}>
+                    <Ionicons name="image-outline" size={26} color="#a3a3ad" />
+                  </TouchableOpacity>
+                  
+                  <View style={styles.textInputWrapper}>
+                    <TextInput
+                      style={styles.textInput}
+                      value={text}
+                      onChangeText={setText}
+                      placeholder="Message..."
+                      placeholderTextColor="#888"
+                      multiline
+                      keyboardType="default" 
+                    />
+                  </View>
+                  
+                  <TouchableOpacity 
+                    onPress={sendMessage} 
+                    style={[styles.sendBtn, (!text.trim() && !imageUri) && styles.sendBtnDisabled]}
+                    disabled={!text.trim() && !imageUri}
+                  >
+                    <MaterialCommunityIcons name="send" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          )}
         </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 // --- STYLES ---
 const styles = StyleSheet.create({
+  rootBackground: {
+    flex: 1,
+    backgroundColor: '#000000', // Pitch black behind the app to emphasize the card
+  },
   container: {
     flex: 1,
     backgroundColor: '#0b0b0c', 
+    marginTop: Platform.OS === 'android' ? 30 : 10, // Margin at top
+    marginBottom: 20, // Margin at bottom
+    marginHorizontal: 8, // Margin on sides
+    borderRadius: 20, // Rounded corners for the app
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#1f1f24',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
   },
-  headerRow: {
+  mainView: {
+    flex: 1,
+  },
+  
+  /* HEADER & MENU */
+  homeHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingRight: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f1f24',
+    backgroundColor: '#141418',
   },
   headerTitle: {
     color: '#e8e8ea',
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    margin: 16,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    letterSpacing: 1,
   },
-  logoutBtn: {
-    padding: 8,
+  menuBtn: {
+    padding: 4,
   },
-  logoutText: {
-    color: '#a3a3ad',
-    fontSize: 14,
-  },
-  contactCard: {
+
+  /* DRAWER MENU */
+  menuOverlay: {
+    flex: 1,
     flexDirection: 'row',
-    padding: 16,
+  },
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  menuContent: {
+    width: width * 0.75, // 75% of screen width
+    backgroundColor: '#141418',
+    borderRightWidth: 1,
+    borderRightColor: '#1f1f24',
+    paddingTop: Platform.OS === 'ios' ? 50 : 20, 
+  },
+  menuHeader: {
+    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#1f1f24',
     alignItems: 'center',
   },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#fff', // White background so the dark clan logos pop
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#444'
+  menuAvatar: {
+    width: 60, height: 60, borderRadius: 30,
+    backgroundColor: '#b40f1f',
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 12,
   },
-  avatarImg: {
-    width: '90%',
-    height: '90%',
-    resizeMode: 'contain',
+  menuAvatarText: {
+    color: '#fff', fontSize: 24, fontWeight: 'bold',
   },
-  avatarText: {
-    color: '#000',
-    fontWeight: 'bold',
-    fontSize: 18,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  menuUserName: {
+    color: '#fff', fontSize: 18, fontWeight: 'bold',
   },
-  contactInfo: {
-    flex: 1,
+  menuUserEmail: {
+    color: '#a3a3ad', fontSize: 13, marginTop: 4,
   },
-  contactName: {
-    color: '#e8e8ea',
-    fontSize: 16,
-    fontWeight: '600',
+  menuItems: {
+    padding: 20,
   },
-  contactSub: {
-    color: '#a3a3ad',
-    fontSize: 12,
-    marginTop: 2,
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 14,
   },
-  badge: {
-    backgroundColor: '#30d158',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  badgeText: {
-    color: '#000',
-    fontSize: 12,
-    fontWeight: 'bold',
+  menuItemText: {
+    color: '#e8e8ea', fontSize: 16, marginLeft: 16, fontWeight: '500'
   },
   
-  // CHAT STYLES
+  /* FOOTER IN MENU */
+  menuFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#1f1f24',
+    backgroundColor: '#0b0b0c',
+  },
+  footerBrand: {
+    color: '#b40f1f', fontSize: 16, fontWeight: 'bold', marginBottom: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  footerByline: {
+    color: '#a3a3ad', fontSize: 11, marginBottom: 12, lineHeight: 16,
+  },
+  footerLink: {
+    color: '#8ab4f8', fontSize: 12, textDecorationLine: 'underline', marginBottom: 12,
+  },
+  footerLegal: {
+    color: '#666', fontSize: 9, lineHeight: 14,
+  },
+
+  /* CONTACT LIST */
+  contactCard: {
+    flexDirection: 'row',
+    padding: 14,
+    marginHorizontal: 10,
+    marginTop: 8,
+    backgroundColor: '#141418',
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1f1f24',
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#2a2a30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '90%', height: '90%', resizeMode: 'contain',
+  },
+  avatarText: {
+    color: '#fff', fontWeight: 'bold', fontSize: 18,
+  },
+  contactInfo: {
+    flex: 1, justifyContent: 'center'
+  },
+  contactName: {
+    color: '#e8e8ea', fontSize: 16, fontWeight: 'bold', marginBottom: 2,
+  },
+  contactSub: {
+    color: '#a3a3ad', fontSize: 13,
+  },
+  badge: {
+    backgroundColor: '#b40f1f',
+    minWidth: 22, height: 22, borderRadius: 11,
+    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  badgeText: {
+    color: '#fff', fontSize: 11, fontWeight: 'bold',
+  },
+  
+  /* CHAT STYLES */
   chatContainer: {
     flex: 1,
   },
   chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#1f1f24',
     backgroundColor: '#141418',
   },
   backBtn: {
-    marginRight: 16,
+    flexDirection: 'row', alignItems: 'center',
+    marginRight: 12, paddingRight: 8,
   },
   backBtnText: {
-    color: '#b40f1f',
-    fontSize: 16,
+    color: '#b40f1f', fontSize: 16, fontWeight: '500', marginLeft: 2,
   },
   chatHeaderInfo: {
     flex: 1,
   },
   chatTitle: {
-    color: '#e8e8ea',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#e8e8ea', fontSize: 16, fontWeight: 'bold',
   },
   chatSubtitle: {
-    color: '#a3a3ad',
-    fontSize: 12,
-    marginTop: 2,
+    color: '#a3a3ad', fontSize: 12, marginTop: 2,
   },
   messagesList: {
     padding: 16,
   },
   messageRow: {
-    marginBottom: 12,
+    marginBottom: 16,
     flexDirection: 'row',
   },
   msgLeft: {
@@ -496,103 +685,99 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: '80%',
-    padding: 12,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.2, shadowRadius: 2, elevation: 2,
   },
   bubbleTheirs: {
     backgroundColor: '#1f1f24',
     borderBottomLeftRadius: 4,
   },
   bubbleMine: {
-    backgroundColor: '#b40f1f',
+    backgroundColor: '#8a0f1a', 
     borderBottomRightRadius: 4,
   },
   senderName: {
-    color: '#a3a3ad',
-    fontSize: 11,
-    marginBottom: 4,
+    color: '#a3a3ad', fontSize: 11, marginBottom: 4, fontWeight: 'bold'
   },
   messageText: {
-    color: '#e8e8ea',
-    fontSize: 15,
+    color: '#fff', fontSize: 15, lineHeight: 20,
+  },
+  messageMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 4,
   },
   timestamp: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 10,
-    marginTop: 4,
-    alignSelf: 'flex-end',
+    color: 'rgba(255,255,255,0.6)', fontSize: 10,
   },
   chatImage: {
-    width: 200,
-    height: 200,
-    borderRadius: 8,
-    marginBottom: 8,
+    width: 220, height: 220, borderRadius: 12, marginBottom: 8,
   },
   
-  // INPUT STYLES
+  /* INPUT STYLES */
   inputContainer: {
     borderTopWidth: 1,
     borderTopColor: '#1f1f24',
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: '#141418',
   },
   inputRow: {
     flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  attachBtn: {
+    padding: 8,
+    marginRight: 4,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  iconBtn: {
-    padding: 10,
-  },
-  iconText: {
-    fontSize: 20,
-  },
-  textInput: {
+  textInputWrapper: {
     flex: 1,
     backgroundColor: '#1f1f24',
-    color: '#e8e8ea',
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#2b2330',
+    minHeight: 40,
+    maxHeight: 120,
+    justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    maxHeight: 100,
-    marginHorizontal: 8,
+    marginRight: 8,
+  },
+  textInput: {
+    color: '#e8e8ea',
+    fontSize: 16,
+    paddingTop: 10, 
+    paddingBottom: 10,
   },
   sendBtn: {
     backgroundColor: '#b40f1f',
+    width: 40, height: 40,
     borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#ff2c52', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3,
   },
   sendBtnDisabled: {
-    backgroundColor: '#444',
-  },
-  sendBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    backgroundColor: '#333', shadowOpacity: 0, elevation: 0,
   },
   imagePreviewContainer: {
     position: 'relative',
-    marginBottom: 8,
+    marginBottom: 10,
     alignSelf: 'flex-start',
+    marginLeft: 44, 
   },
   imagePreview: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
+    width: 100, height: 100, borderRadius: 12,
+    borderWidth: 1, borderColor: '#444',
   },
   removeImage: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: 'black',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeImageText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
+    position: 'absolute', top: -8, right: -8,
+    backgroundColor: '#b40f1f', borderRadius: 12,
+    width: 24, height: 24,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#141418',
   }
 });
