@@ -9,21 +9,53 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import api, { BASE_URL } from '../constants/api';
 
+/* --- Clan Colors (Mapped from Web) --- */
+const CLAN_COLORS = {
+  Brujah: '#b40f1f', Gangrel: '#2f7a3a', Malkavian: '#713c8b', Nosferatu: '#6a4b2b',
+  Toreador: '#b8236b', Tremere: '#7b1113', Ventrue: '#1b4c8c', 'Banu Haqim': '#7a2f57',
+  Hecata: '#2b6b6b', Lasombra: '#191a5a', 'The Ministry': '#865f12',
+  Caitiff: '#636363', 'Thin-blood': '#6e6e2b',
+};
+
+/* --- Static Image Mapping --- 
+   React Native requires static string paths for local images.
+   Ensure these files exist in your assets/images folder! 
+*/
+const CLAN_IMAGES = {
+  'Brujah': require('../assets/images/clans/330px-Brujah_symbol.png'),
+  'Gangrel': require('../assets/images/clans/330px-Gangrel_symbol.png'),
+  'Malkavian': require('../assets/images/clans/330px-Malkavian_symbol.png'),
+  'Nosferatu': require('../assets/images/clans/330px-Nosferatu_symbol.png'),
+  'Toreador': require('../assets/images/clans/330px-Toreador_symbol.png'),
+  'Tremere': require('../assets/images/clans/330px-Tremere_symbol.png'),
+  'Ventrue': require('../assets/images/clans/330px-Ventrue_symbol.png'),
+  'Banu Haqim': require('../assets/images/clans/330px-Banu_Haqim_symbol.png'),
+  'Hecata': require('../assets/images/clans/330px-Hecata_symbol.png'),
+  'Lasombra': require('../assets/images/clans/330px-Lasombra_symbol.png'),
+  'The Ministry': require('../assets/images/clans/330px-Ministry_symbol.png'),
+  'Caitiff': require('../assets/images/clans/330px-Caitiff_symbol.png'),
+  'Thin-blood': require('../assets/images/clans/330px-Thinblood_symbol.png'),
+  'Admin': require('../assets/images/dice/MessyCrit.png')
+};
+
+// Helper to determine if a contact is an Admin
+const isContactAdmin = (u) => u?.role === 'admin' || u?.permission_level === 'admin' || !!u?.is_admin;
+
 export default function ChatScreen() {
   const router = useRouter();
 
-  const [currentUser, setCurrentUser] = useState(null);
+  const[currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState([]);
-  const [npcs, setNpcs] = useState([]);
+  const[npcs, setNpcs] = useState([]);
   const [groups, setGroups] = useState([]);
   
-  const [selectedContact, setSelectedContact] = useState(null);
+  const[selectedContact, setSelectedContact] = useState(null);
   const [messages, setMessages] = useState([]);
   const[text, setText] = useState('');
   const [imageUri, setImageUri] = useState(null);
   
-  const [loading, setLoading] = useState(true); // Start loading while checking Auth
-  const[token, setToken] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState('');
   const pollRef = useRef(null);
   const flatListRef = useRef(null);
 
@@ -33,20 +65,17 @@ export default function ChatScreen() {
       try {
         const storedToken = await AsyncStorage.getItem('token');
         if (!storedToken) {
-          router.replace('/login'); // Not logged in? Go to login!
+          router.replace('/login'); 
           return;
         }
         
         setToken(storedToken);
         
-        // Fetch real user data from server.js
         const meRes = await api.get('/auth/me');
         setCurrentUser(meRes.data.user);
 
-        // Fetch contacts
         await loadContacts();
       } catch (e) {
-        // If the token is expired/invalid, logout and go to login
         await AsyncStorage.removeItem('token');
         router.replace('/login');
       }
@@ -163,31 +192,55 @@ export default function ChatScreen() {
 
   // --- RENDERERS ---
 
-  const renderContact = ({ item, type }) => (
-    <TouchableOpacity 
-      style={styles.contactCard} 
-      onPress={() => {
-        setMessages([]); 
-        setSelectedContact({ ...item, type });
-      }}
-    >
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>
-          {item.name ? item.name[0] : (item.display_name || '?')[0]}
-        </Text>
-      </View>
-      <View style={styles.contactInfo}>
-        <Text style={styles.contactName}>{item.char_name || item.name || item.display_name}</Text>
-        <Text style={styles.contactSub}>{type.toUpperCase()} {item.clan ? `• ${item.clan}` : ''}</Text>
-      </View>
-      {item.unread_count > 0 && (
-        <View style={styles.badge}><Text style={styles.badgeText}>{item.unread_count}</Text></View>
-      )}
-    </TouchableOpacity>
-  );
+  const renderContact = ({ item, type }) => {
+    // Determine the avatar image
+    const showAdminIcon = isContactAdmin(item);
+    let avatarSource = null;
+
+    if (showAdminIcon) {
+      avatarSource = CLAN_IMAGES['Admin'];
+    } else if (item.clan && CLAN_IMAGES[item.clan]) {
+      avatarSource = CLAN_IMAGES[item.clan];
+    }
+
+    // Determine the border tint
+    const tint = CLAN_COLORS[item.clan] || '#1f1f24';
+
+    return (
+      <TouchableOpacity 
+        style={[styles.contactCard, { borderLeftColor: tint, borderLeftWidth: 3 }]} 
+        onPress={() => {
+          setMessages([]); 
+          setSelectedContact({ ...item, type });
+        }}
+      >
+        <View style={styles.avatar}>
+          {avatarSource ? (
+             <Image source={avatarSource} style={styles.avatarImg} />
+          ) : (
+            <Text style={styles.avatarText}>
+              {item.name ? item.name[0].toUpperCase() : (item.display_name || '?')[0].toUpperCase()}
+            </Text>
+          )}
+        </View>
+        
+        <View style={styles.contactInfo}>
+          <Text style={styles.contactName}>
+            {item.char_name || item.name || item.display_name}
+          </Text>
+          <Text style={styles.contactSub}>
+            {item.display_name || 'NPC'} {showAdminIcon ? '• Admin' : ''}
+          </Text>
+        </View>
+        
+        {item.unread_count > 0 && (
+          <View style={styles.badge}><Text style={styles.badgeText}>{item.unread_count}</Text></View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   const renderMessage = ({ item }) => {
-    // We now use the REAL currentUser.id we fetched from /auth/me
     const isMine = item.sender_id === currentUser?.id || item.sender_id === 'user';
     const imageUrl = item.attachment_id ? `${BASE_URL}/chat/media/${item.attachment_id}?token=${token}` : null;
 
@@ -218,7 +271,6 @@ export default function ChatScreen() {
 
   // --- VIEWS ---
 
-  // Don't render anything until auth checks are done
   if (loading || !currentUser) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -259,9 +311,14 @@ export default function ChatScreen() {
           <TouchableOpacity onPress={() => setSelectedContact(null)} style={styles.backBtn}>
             <Text style={styles.backBtnText}>{"< Back"}</Text>
           </TouchableOpacity>
-          <Text style={styles.chatTitle} numberOfLines={1}>
-            {selectedContact.char_name || selectedContact.name || selectedContact.display_name}
-          </Text>
+          <View style={styles.chatHeaderInfo}>
+            <Text style={styles.chatTitle} numberOfLines={1}>
+              {selectedContact.char_name || selectedContact.name || selectedContact.display_name}
+            </Text>
+            {selectedContact.clan && (
+              <Text style={styles.chatSubtitle}>{selectedContact.clan}</Text>
+            )}
+          </View>
         </View>
 
         <FlatList
@@ -345,18 +402,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#2a2a30',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff', // White background so the dark clan logos pop
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#444'
+  },
+  avatarImg: {
+    width: '90%',
+    height: '90%',
+    resizeMode: 'contain',
   },
   avatarText: {
-    color: '#fff',
+    color: '#000',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 18,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   contactInfo: {
     flex: 1,
@@ -372,13 +438,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   badge: {
-    backgroundColor: '#b40f1f',
+    backgroundColor: '#30d158',
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
   badgeText: {
-    color: '#fff',
+    color: '#000',
     fontSize: 12,
     fontWeight: 'bold',
   },
@@ -402,11 +468,18 @@ const styles = StyleSheet.create({
     color: '#b40f1f',
     fontSize: 16,
   },
+  chatHeaderInfo: {
+    flex: 1,
+  },
   chatTitle: {
     color: '#e8e8ea',
     fontSize: 18,
     fontWeight: 'bold',
-    flex: 1,
+  },
+  chatSubtitle: {
+    color: '#a3a3ad',
+    fontSize: 12,
+    marginTop: 2,
   },
   messagesList: {
     padding: 16,
