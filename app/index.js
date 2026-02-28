@@ -112,7 +112,7 @@ export default function ChatScreen() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.permission_level === 'admin';
 
-  // 1. Authentication & Initial Load
+// 1. Authentication & Initial Load
   useEffect(() => {
     const setup = async () => {
       try {
@@ -122,6 +122,9 @@ export default function ChatScreen() {
           return;
         }
         setToken(storedToken);
+        
+        // 🚀 THE FIX: Attach the token to Axios before making any requests!
+        api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
         
         const meRes = await api.get('/auth/me');
         setCurrentUser(meRes.data.user);
@@ -135,6 +138,7 @@ export default function ChatScreen() {
 
         await loadContacts();
       } catch (e) {
+        // If the token is truly invalid/expired, this properly logs them out
         await AsyncStorage.removeItem('token');
         router.replace('/login');
       }
@@ -481,6 +485,23 @@ export default function ChatScreen() {
                 <Text style={styles.headerTitle}>Comms</Text>
                 <View style={{width: 28}} /> 
               </View>
+              
+              {/* --- ADDED MODE SWITCHER --- */}
+              <View style={styles.modeSwitchContainer}>
+                <TouchableOpacity style={[styles.modeButton, styles.activeModeButton]}>
+                  <Text style={[styles.modeTitle, styles.activeModeTitle]}>SchreckNet</Text>
+                  <Text style={[styles.modeSubtitle, styles.activeModeSubtitle]}>Everything here is safe.</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.modeButton} 
+                  onPress={() => router.replace('/emails')}
+                >
+                  <Text style={styles.modeTitle}>Surface Web</Text>
+                  <Text style={styles.modeSubtitle}>Be careful, you are not safe.</Text>
+                </TouchableOpacity>
+              </View>
+              {/* --------------------------- */}
+
               <FlatList
                 data={[
                   ...groups.map(g => ({ ...g, type: 'group' })),
@@ -604,6 +625,30 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: '#e8e8ea', fontSize: 20, fontWeight: 'bold',
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', letterSpacing: 1,
+  },
+  modeSwitchContainer: {
+    flexDirection: 'row', backgroundColor: '#141418', padding: 8,
+    borderBottomWidth: 1, borderBottomColor: '#1f1f24', gap: 8,
+  },
+  modeButton: {
+    flex: 1, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center',
+    borderRadius: 8, backgroundColor: '#0b0b0c', borderWidth: 1, borderColor: '#1f1f24',
+  },
+  activeModeButton: {
+    backgroundColor: '#1a1418', borderColor: '#b40f1f',
+  },
+  modeTitle: {
+    color: '#a3a3ad', fontSize: 14, fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  activeModeTitle: {
+    color: '#b40f1f',
+  },
+  modeSubtitle: {
+    color: '#666', fontSize: 10, marginTop: 2, textAlign: 'center',
+  },
+  activeModeSubtitle: {
+    color: '#e8e8ea',
   },
   menuBtn: { padding: 4 },
   menuOverlay: { flex: 1, flexDirection: 'row' },
