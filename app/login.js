@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 8,
     fontWeight: '600',
-    textTransform: 'uppercase',
+    textTransform: 'uppercase', //G
     letterSpacing: 1,
   },
   input: {
