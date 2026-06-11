@@ -1,50 +1,66 @@
-# Welcome to your Expo app 👋
+# Erebus Mobile Companion
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A mobile companion app for the Vampire Platform, providing secure in-character communication (SchreckNet) and out-of-character email (Surface Web) for LARP participants.
 
-## Get started
+## Features
 
-1. Install dependencies
+- **SchreckNet**: Encrypted chat system for in-character Kindred communication.
+- **Surface Web**: Email system for communicating with mortal contacts, NPCs, and out-of-character logistics.
+- **Cross-platform**: Available for iOS, Android, and web via Expo.
+- **Real-time notifications**: Receive alerts for new messages and game events.
+- **Character integration**: Likely tied to your Vampire Platform character (to be confirmed from actual implementation).
 
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ (npm 9+ recommended)
+- Expo CLI (or use `npx expo`)
+- A running Vampire Platform backend (for authentication and message sync)
+
+### Installation
+
+1. Clone the repository and navigate to the erebus-mobile directory.
+2. Install dependencies:
    ```bash
    npm install
    ```
-
-2. Start the app
-
+3. Configure the app:
+   - Create an `.env` file based on the example (if any) or set necessary environment variables for the Expo app (e.g., API URL).
+   - Refer to the source code for any required configuration.
+4. Start the development server:
    ```bash
    npx expo start
    ```
+5. Use the Expo Go app on your device or run on an emulator/simulator.
 
-In the output, you'll find options to open the app in a
+## Technology Stack
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- React Native
+- Expo SDK
+- React Navigation
+- Axios for HTTP requests
+- AsyncStorage for local data persistence
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Communication Systems
 
-## Get a fresh project
+### SchreckNet
+A secure, encrypted chat channel designed for in-character communication between Kindred. Messages are stored locally and synced with the server when online.
 
-When you're ready, run:
+### Surface Web
+An email-like system for communicating with mortal assets, contacts, and out-of-character game logistics. Mimics a classic email interface.
 
-```bash
-npm run reset-project
-```
+## Project Structure
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+- `app/`: Contains the main application screens and routing (Expo router).
+- `components/`: Reusable components like ChatSystem and EmailSystem.
+- `assets/`: Images, icons, and other static assets.
+- `scripts/`: Utility scripts (e.g., reset-project).
 
-## Learn more
+## Notes
 
-To learn more about developing your project with Expo, look at the following resources:
+This app is part of the Vampire Platform ecosystem. It requires a working backend to authenticate users and synchronize messages. Ensure the backend is running and properly configured for CORS and authentication.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## License
 
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Please check the LICENSE file in the repository for licensing information.
