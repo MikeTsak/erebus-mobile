@@ -1,8 +1,30 @@
-# Erebus Mobile Companion
+<div align="center">
+  <img src="https://img.shields.io/badge/Erebus%20Mobile-App-black?style=for-the-badge&logo=expo" alt="Erebus Mobile" />
+  <h1>📱 Erebus Mobile Companion 📱</h1>
+  <p><strong>Current Version: 1.0.0</strong></p>
 
-A mobile companion app for the Vampire Platform, providing secure in-character communication (SchreckNet) and out-of-character email (Surface Web) for LARP participants.
+  <p>
+    <img src="https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white" alt="Expo" />
+    <img src="https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React Native" />
+    <img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License" />
+  </p>
+</div>
 
-## Features
+## 📖 Overview
+
+The official mobile companion app for the Vampire Platform. 
+
+It provides secure in-character communication via the **SchreckNet** protocol and out-of-character email via the **Surface Web** for LARP participants.
+
+## ✨ Latest Features
+- **Expo Router Architecture**: File-based routing using the latest `expo-router` for deep linking and native-like navigation.
+- **React Native 0.81**: Bleeding-edge React Native engine with React 19 support.
+- **Rich Media & Notifications**: Deep integration with `expo-image`, `expo-notifications`, and `expo-image-picker`.
+- **Haptic Feedback**: Enhanced user experience with `expo-haptics` for physical responses during interactions.
+- **Async Storage**: Persistent authentication and caching for offline capabilities.
+- **Reanimated & Gesture Handler**: Buttery smooth 60fps animations and intuitive gestures.
+
+## ⚙️ Core Features
 
 - **SchreckNet**: Encrypted chat system for in-character Kindred communication.
 - **Surface Web**: Email system for communicating with mortal contacts, NPCs, and out-of-character logistics.
