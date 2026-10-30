@@ -1,88 +1,104 @@
 <div align="center">
-  <img src="https://img.shields.io/badge/Erebus%20Mobile-App-black?style=for-the-badge&logo=expo" alt="Erebus Mobile" />
-  <h1>📱 Erebus Mobile Companion 📱</h1>
-  <p><strong>Current Version: 1.0.0</strong></p>
 
-  <p>
-    <img src="https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white" alt="Expo" />
-    <img src="https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React Native" />
-    <img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License" />
-  </p>
+# Erebus Portal: Mobile
+
+**The pocket comms device for the Athens Through Time *Vampire: The Masquerade* LARP.**
+
+SchreckNet chat and Surface Web email in a native app for Android and iOS, with push notifications for new messages.
+
+[![Expo](https://img.shields.io/badge/Expo_SDK-54-000020?style=flat-square&logo=expo&logoColor=white)](https://expo.dev)
+[![React Native](https://img.shields.io/badge/React_Native-0.81-20232A?style=flat-square&logo=react&logoColor=61DAFB)](https://reactnative.dev)
+[![Expo Router](https://img.shields.io/badge/Expo_Router-6-000020?style=flat-square&logo=expo&logoColor=white)](https://docs.expo.dev/router/introduction/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+
 </div>
 
-## 📖 Overview
+---
 
-The official mobile companion app for the Vampire Platform. 
+## Features
 
-It provides secure in-character communication via the **SchreckNet** protocol and out-of-character email via the **Surface Web** for LARP participants.
+**SchreckNet**, "Everything here is safe": in-character chat between Kindred.
 
-## ✨ Latest Features
-- **Expo Router Architecture**: File-based routing using the latest `expo-router` for deep linking and native-like navigation.
-- **React Native 0.81**: Bleeding-edge React Native engine with React 19 support.
-- **Rich Media & Notifications**: Deep integration with `expo-image`, `expo-notifications`, and `expo-image-picker`.
-- **Haptic Feedback**: Enhanced user experience with `expo-haptics` for physical responses during interactions.
-- **Async Storage**: Persistent authentication and caching for offline capabilities.
-- **Reanimated & Gesture Handler**: Buttery smooth 60fps animations and intuitive gestures.
+- Direct messages, group chats and NPC conversations.
+- Image attachments and read receipts.
+- Storytellers can see NPC threads and reply as an NPC.
 
-## ⚙️ Core Features
+**Surface Web**, "Be careful, you are not safe": in-fiction email to mortal contacts and NPCs.
 
-- **SchreckNet**: Encrypted chat system for in-character Kindred communication.
-- **Surface Web**: Email system for communicating with mortal contacts, NPCs, and out-of-character logistics.
-- **Cross-platform**: Available for iOS, Android, and web via Expo.
-- **Real-time notifications**: Receive alerts for new messages and game events.
-- **Character integration**: Likely tied to your Vampire Platform character (to be confirmed from actual implementation).
+**Also included**
 
-## Getting Started
+- Sign-in with your portal account, and password reset.
+- Push notifications for new messages (Expo Notifications, with a high-priority Android channel).
+- HTML rendering for rich email bodies.
 
-### Prerequisites
+## Quick start
 
-- Node.js 18+ (npm 9+ recommended)
-- Expo CLI (or use `npx expo`)
-- A running Vampire Platform backend (for authentication and message sync)
+**Requirements:** Node.js 20+, an Android or iOS device or emulator, and the [API](https://github.com/MikeTsak/vtm-platform-back) running somewhere the device can reach.
 
-### Installation
+```bash
+npm install
+echo "EXPO_PUBLIC_API_URL=http://192.168.1.15:3001/api" > .env   # your machine's LAN IP
+npx expo start
+```
 
-1. Clone the repository and navigate to the erebus-mobile directory.
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Configure the app:
-   - Create an `.env` file based on the example (if any) or set necessary environment variables for the Expo app (e.g., API URL).
-   - Refer to the source code for any required configuration.
-4. Start the development server:
-   ```bash
-   npx expo start
-   ```
-5. Use the Expo Go app on your device or run on an emulator/simulator.
+On a phone, `localhost` is the phone itself, so `EXPO_PUBLIC_API_URL` must be your computer's LAN IP (or a public URL). Expo inlines `EXPO_PUBLIC_*` variables at bundle time, so restart the bundler after changing it.
 
-## Technology Stack
+The project uses `expo-dev-client`. Build a development client once with `npm run android` or `npm run ios`; after that, `npx expo start` is enough.
 
-- React Native
-- Expo SDK
-- React Navigation
-- Axios for HTTP requests
-- AsyncStorage for local data persistence
+## Scripts
 
-## Communication Systems
+| Script | What it does |
+| --- | --- |
+| `npm start` | Expo dev server |
+| `npm run android` | Build and run a native Android development client |
+| `npm run ios` | Build and run a native iOS development client |
+| `npm run web` | Run in the browser |
+| `npm run lint` | `expo lint` |
 
-### SchreckNet
-A secure, encrypted chat channel designed for in-character communication between Kindred. Messages are stored locally and synced with the server when online.
+## App identity
 
-### Surface Web
-An email-like system for communicating with mortal assets, contacts, and out-of-character game logistics. Mimics a classic email interface.
+| | |
+| --- | --- |
+| Display name | Erebus Portal |
+| Android package / iOS bundle ID | `com.cerebralproductions.erebus` |
+| Deep-link scheme | `erebusmobile://` |
 
-## Project Structure
+## How it talks to the API
 
-- `app/`: Contains the main application screens and routing (Expo router).
-- `components/`: Reusable components like ChatSystem and EmailSystem.
-- `assets/`: Images, icons, and other static assets.
-- `scripts/`: Utility scripts (e.g., reset-project).
+`constants/api.js` keeps the session token in AsyncStorage and sends it as a `Bearer` header. The app uses the same endpoints as the web portal: `/auth/*`, `/chat/*`, `/emails/send`, `/push/subscribe` and, for Storytellers, `/admin/chat/*`.
 
-## Notes
+## Project structure
 
-This app is part of the Vampire Platform ecosystem. It requires a working backend to authenticate users and synchronize messages. Ensure the backend is running and properly configured for CORS and authentication.
+```text
+app/             Expo Router screens
+  _layout.tsx    root stack
+  index.js       comms home, switching between SchreckNet and Surface Web
+  login.js       sign in
+  forgot.js      password reset
+  emails.js      Surface Web inbox
+components/      ChatSystem, EmailSystem, themed UI primitives
+constants/       api.js (axios client), theme.ts
+hooks/           colour-scheme helpers
+assets/          icons, splash screen, fonts
+```
+
+The `android/` folder is generated by `expo run:android` and is not tracked in Git.
+
+## The Erebus ecosystem
+
+| Repository | Role |
+| --- | --- |
+| [back](https://github.com/MikeTsak/vtm-platform-back) | API, realtime, jobs, Discord bot |
+| [front](https://github.com/MikeTsak/vtm-platform-front) | Player and Storyteller portal at [portal.attlarp.gr](https://portal.attlarp.gr) |
+| [wiki-vtm](https://github.com/MikeTsak/wiki-vtm) | Erebus Wiki at [wiki.attlarp.gr](https://wiki.attlarp.gr) |
+| [attlarp.gr](https://github.com/MikeTsak/attlarp.gr) | Public chronicle website |
+| **erebus-mobile** (this repo) | Mobile comms app |
+| [harpy-kindle](https://github.com/MikeTsak/harpy-kindle) | E-ink Harpy terminal for live events |
+| [vampire-treasure-hunt](https://github.com/MikeTsak/vampire-treasure-hunt) | Hunt Tracker for location-based challenges |
+| [badge-for-larp](https://github.com/MikeTsak/badge-for-larp) | Printable character badge generator |
 
 ## License
 
-Please check the LICENSE file in the repository for licensing information.
+This repository does not include a license file.
+
+*Vampire: The Masquerade* is a trademark of Paradox Interactive AB. This is an unofficial fan project for the Athens Through Time chronicle.
